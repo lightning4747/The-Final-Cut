@@ -1,24 +1,17 @@
-import React from 'react'
+import React from "react";
+import "./Loader.css";
 
 const LoadingSpinner = () => {
   return (
-    <div style={{
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      height: '100vh',
-      backgroundColor: '#f0f0f0'
-    }}>
-      <div style={{
-        border: '8px solid #f3f3f3',
-        borderTop: '8px solid #3498db',
-        borderRadius: '50%',
-        width: '60px',
-        height: '60px',
-        animation: 'spin 2s linear infinite'
-      }}></div>
+    <div className="loader-wrapper">
+      <div className="film">
+        <div className="hole"></div>
+        <div className="hole"></div>
+        <div className="hole"></div>
+      </div>
+      <p className="loading-text">Loading…</p>
     </div>
-  )
-}
+  );
+};
 
-export default LoadingSpinner
+export default LoadingSpinner;
