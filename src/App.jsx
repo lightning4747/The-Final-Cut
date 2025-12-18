@@ -18,20 +18,23 @@ const API_OPTIONS = {
 
 const App = () => {
   const [searchTerm, setsearchTerm] = useState('')
-  const [errormessage, seterrormessage] = useState('')
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
+  
+  const [isloading, setisloading] = useState(false)
+  
   const [movielist, setmovielist] = useState([])
   const [trendingMovies, setTrendingMovies] = useState([])
-  const [isloading, setisloading] = useState(false)
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
+
+  const [errormessage, seterrormessage] = useState('')
 
   const fetchMovies = async (query = '') => {
     setisloading(true)
     seterrormessage('')
 
     try {
-      // When there is no search term, show trending movies by default
-      const endpoint =
-        query && query.trim().length > 0
+      // query && query.trim().length > 0  is important, cause if the query is undefined then the trim will crash, trim only works on string.
+      const endpoint =  
+        query && query.trim().length > 0 
           ? `${API_BASE_URL}/search/movie?query=${encodeURIComponent(query)}`
           : `${API_BASE_URL}/trending/movie/week`
 
@@ -118,15 +121,11 @@ const App = () => {
         <section className="all-movies">
           <h2>All Movies</h2>
 
-          {isloading ? (
-            <LoadingSpinner />
-          ) : errormessage ? (
-            <p className="text-red-500">{errormessage}</p>
-          ) : (
+          {isloading ? (<LoadingSpinner />) 
+          : errormessage ? (<p className="text-red-500">{errormessage}</p>) 
+          : (
             <ul>
-              {movielist.map((movie) => (
-                <MovieCard key={movie.id} movie={movie} />
-              ))}
+              {movielist.map((movie) => (<MovieCard key={movie.id} movie={movie} />))}
             </ul>
           )}
         </section>
