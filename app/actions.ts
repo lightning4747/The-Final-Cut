@@ -1,250 +1,289 @@
 "use server"
 
 const API_BASE_URL = "https://api.themoviedb.org/3"
-const API_KEY = process.env.TMDB_API_KEY!
+const TMDB_ACCESS_TOKEN = process.env.TMDB_API_KEY! // rename env later if you want
 
-const API_OPTIONS = {
+if (!TMDB_ACCESS_TOKEN) {
+  throw new Error("TMDB access token missing")
+}
+
+const API_OPTIONS: RequestInit = {
   method: "GET",
   headers: {
     accept: "application/json",
-    Authorization: `Bearer ${API_KEY}`,
+    Authorization: `Bearer ${TMDB_ACCESS_TOKEN}`,
   },
 }
 
-export async function fetchMovies(query = "") {
-  if (!API_KEY) {
-    return {
-      results: [],
-      error: "TMDB API key is not configured. Please add TMDB_API_KEY to your environment variables.",
-    }
-  }
+/* ----------------------------- Types ----------------------------- */
 
+export interface Movie {
+  id: number
+  title: string
+  overview: string
+  poster_path: string | null
+  backdrop_path: string | null
+  release_date: string
+  vote_average: number
+}
+
+interface Cast {
+  id: number
+  name: string
+  character: string
+  profile_path: string | null
+}
+
+interface Crew {
+  id: number
+  name: string
+  job: string
+}
+
+/* ------------------------- TMDB Actions --------------------------- */
+
+export async function fetchMovies(query = ""): Promise<{
+  results: Movie[]
+  error: string | null
+}> {
   try {
-    const endpoint =
-      query && query.trim().length > 0
-        ? `${API_BASE_URL}/search/movie?query=${encodeURIComponent(query)}`
-        : `${API_BASE_URL}/trending/movie/week`
+    const endpoint = query.trim()
+      ? `${API_BASE_URL}/search/movie?query=${encodeURIComponent(query)}`
+      : `${API_BASE_URL}/trending/movie/week`
 
-    const response = await fetch(endpoint, API_OPTIONS)
+    const res = await fetch(endpoint, {
+      ...API_OPTIONS,
+      next: { revalidate: 600 },
+    })
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      if (response.status === 401) {
-        return { results: [], error: "Invalid TMDB API key. Please check your TMDB_API_KEY environment variable." }
+    if (!res.ok) {
+      if (res.status === 401) {
+        return { results: [], error: "Invalid TMDB token" }
       }
-      throw new Error(errorData.status_message || "Failed to fetch movies")
+      throw new Error("Failed to fetch movies")
     }
 
-    const data = await response.json()
-    return { results: data.results || [], error: null }
-  } catch (error) {
-    console.error(error)
-    return { results: [], error: "Error fetching movies. Please check your API configuration." }
+    const data = await res.json()
+    return { results: data.results ?? [], error: null }
+  } catch {
+    return { results: [], error: "Movie fetch failed" }
   }
 }
 
-export async function fetchMovieDetails(movieId: string) {
-  console.log("fetchMovieDetails called with ID:", movieId)
-  if (!API_KEY) {
-    console.error("API Key missing")
-    return { movie: null, error: "TMDB API key is not configured." }
-  }
-
+export async function fetchMovieDetails(movieId: string): Promise<{
+  movie: (Movie & {
+    cast: Cast[]
+    director: string
+    videos?: any
+    images?: any
+  }) | null
+  error: string | null
+}> {
   try {
-    const movieUrl = `${API_BASE_URL}/movie/${movieId}?append_to_response=videos,images`
-    const creditsUrl = `${API_BASE_URL}/movie/${movieId}/credits`
-
-    console.log("Fetching:", movieUrl)
-
-    const [movieResponse, creditsResponse] = await Promise.all([
-      fetch(movieUrl, API_OPTIONS),
-      fetch(creditsUrl, API_OPTIONS),
+    const [movieRes, creditsRes] = await Promise.all([
+      fetch(
+        `${API_BASE_URL}/movie/${movieId}?append_to_response=videos,images`,
+        { ...API_OPTIONS, next: { revalidate: 3600 } }
+      ),
+      fetch(`${API_BASE_URL}/movie/${movieId}/credits`, {
+        ...API_OPTIONS,
+        next: { revalidate: 3600 },
+      }),
     ])
 
-    console.log("Responses received:", {
-      movieStatus: movieResponse.status,
-      creditsStatus: creditsResponse.status
-    })
-
-    if (!movieResponse.ok) {
-      if (movieResponse.status === 401) {
-        return { movie: null, error: "Invalid TMDB API key." }
-      }
-      throw new Error(`Failed to fetch movie details: ${movieResponse.status}`)
+    if (!movieRes.ok) {
+      return { movie: null, error: "Movie not found" }
     }
 
-    const movie = await movieResponse.json()
-    console.log("Movie JSON parsed, title:", movie?.title)
+    const movie = await movieRes.json()
 
-    // Explicitly type credits to avoid 'never[]' inference
-    let credits: { cast: any[]; crew: any[] } = { cast: [], crew: [] }
+    let cast: Cast[] = []
+    let director = "Unknown"
 
-    if (creditsResponse.ok) {
-      const creditsData = await creditsResponse.json()
-      credits = creditsData
-      console.log("Credits JSON parsed")
-    } else {
-      console.warn("Credits fetch failed")
+    if (creditsRes.ok) {
+      const credits = await creditsRes.json()
+      cast = (credits.cast ?? []).slice(0, 10)
+      director =
+        credits.crew?.find((c: Crew) => c.job === "Director")?.name ??
+        "Unknown"
     }
 
-    // Safety checks for arrays
-    const cast = Array.isArray(credits.cast) ? credits.cast : []
-    const crew = Array.isArray(credits.crew) ? credits.crew : []
-
-    const result = {
+    return {
       movie: {
         ...movie,
-        cast: cast.slice(0, 10),
-        director: crew.find((c: any) => c.job === "Director")?.name || "Unknown",
+        cast,
+        director,
       },
       error: null,
     }
-
-    console.log("Returning result successfully")
-    return result
-  } catch (error) {
-    console.error("Error in fetchMovieDetails:", error)
-    return { movie: null, error: "Error fetching movie details" }
+  } catch {
+    return { movie: null, error: "Failed to fetch movie details" }
   }
 }
 
-export async function fetchGenres() {
-  if (!API_KEY) {
-    return { genres: [], error: "TMDB API key is not configured." }
-  }
-
+export async function fetchGenres(): Promise<{
+  genres: { id: number; name: string }[]
+  error: string | null
+}> {
   try {
-    const response = await fetch(`${API_BASE_URL}/genre/movie/list`, API_OPTIONS)
+    const res = await fetch(`${API_BASE_URL}/genre/movie/list`, {
+      ...API_OPTIONS,
+      next: { revalidate: 86400 },
+    })
 
-    if (!response.ok) {
-      throw new Error("Failed to fetch genres")
-    }
+    if (!res.ok) throw new Error()
 
-    const data = await response.json()
-    return { genres: data.genres || [], error: null }
-  } catch (error) {
-    console.error(error)
-    return { genres: [], error: "Error fetching genres" }
+    const data = await res.json()
+    return { genres: data.genres ?? [], error: null }
+  } catch {
+    return { genres: [], error: "Failed to fetch genres" }
   }
 }
 
-export async function getRandomMovieSuggestion(genreId?: string) {
-  if (!API_KEY) {
-    return { movie: null, error: "TMDB API key is not configured." }
-  }
-
+export async function getRandomMovieSuggestion(
+  genreId?: string
+): Promise<{ movie: Movie | null; error: string | null }> {
   try {
-    const page = Math.floor(Math.random() * 5) + 1
-    const genreParam = genreId && genreId !== "all" ? `&with_genres=${genreId}` : ""
+    const genre =
+      genreId && genreId !== "all" ? `&with_genres=${genreId}` : ""
 
-    const response = await fetch(
-      `${API_BASE_URL}/discover/movie?sort_by=popularity.desc&page=${page}${genreParam}`,
-      API_OPTIONS,
-    )
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const page = Math.floor(Math.random() * 10) + 1
 
-    if (!response.ok) {
-      throw new Error("Failed to fetch random movie")
+      const res = await fetch(
+        `${API_BASE_URL}/discover/movie` +
+          `?language=en-US` +
+          `&include_adult=false` +
+          `&vote_count.gte=100` +
+          `&sort_by=popularity.desc` +
+          `&page=${page}` +
+          genre,
+        {
+          ...API_OPTIONS,
+          next: { revalidate: 300 },
+        }
+      )
+
+      if (!res.ok) continue
+
+      const data = await res.json()
+      const results: Movie[] = data.results ?? []
+
+      if (results.length > 0) {
+        const randomMovie =
+          results[Math.floor(Math.random() * results.length)]
+        return { movie: randomMovie, error: null }
+      }
     }
 
-    const data = await response.json()
-    const results = data.results || []
-
-    if (results.length === 0) {
-      return { movie: null, error: "No movies found" }
-    }
-
-    const randomMovie = results[Math.floor(Math.random() * results.length)]
-    return { movie: randomMovie, error: null }
-  } catch (error) {
-    console.error(error)
-    return { movie: null, error: "Error fetching random movie" }
+    return { movie: null, error: "No suitable movie found" }
+  } catch {
+    return { movie: null, error: "Random suggestion failed" }
   }
 }
 
-export async function toggleFavorite(userId: string, movieId: string, movieData: any) {
+
+
+
+
+/* ------------------------ Supabase Actions ------------------------- */
+
+async function getSupabase() {
   const { createClient } = await import("@/lib/supabase/server")
-  const supabase = await createClient()
+  return createClient()
+}
 
+export async function toggleFavorite(
+  userId: string,
+  movie: Movie
+): Promise<{ success: boolean; action?: "added" | "removed"; error?: string }> {
   try {
-    const { data: existing } = await supabase
+    const supabase = await getSupabase()
+
+    const { data } = await supabase
       .from("favorites")
-      .select("*")
+      .select("id")
       .eq("user_id", userId)
-      .eq("movie_id", movieId)
+      .eq("movie_id", movie.id)
       .maybeSingle()
 
-    if (existing) {
-      const { error } = await supabase.from("favorites").delete().eq("user_id", userId).eq("movie_id", movieId)
-
-      if (error) throw error
+    if (data) {
+      await supabase.from("favorites").delete().eq("id", data.id)
       return { success: true, action: "removed" }
-    } else {
-      const { error } = await supabase.from("favorites").insert({
-        user_id: userId,
-        movie_id: movieId,
-        movie_title: movieData.title,
-        poster_path: movieData.poster_path,
-      })
-
-      if (error) throw error
-      return { success: true, action: "added" }
     }
-  } catch (error) {
-    console.error("Error toggling favorite:", error)
-    return { success: false, error: "Failed to update favorites" }
+
+    await supabase.from("favorites").insert({
+      user_id: userId,
+      movie_id: movie.id,
+      movie_title: movie.title,
+      poster_path: movie.poster_path,
+    })
+
+    return { success: true, action: "added" }
+  } catch {
+    return { success: false, error: "Favorite update failed" }
   }
 }
 
-export async function toggleWatchlist(userId: string, movieId: string, movieData: any) {
-  const { createClient } = await import("@/lib/supabase/server")
-  const supabase = await createClient()
-
+export async function toggleWatchlist(
+  userId: string,
+  movie: Movie
+): Promise<{ success: boolean; action?: "added" | "removed"; error?: string }> {
   try {
-    const { data: existing } = await supabase
+    const supabase = await getSupabase()
+
+    const { data } = await supabase
       .from("watchlist")
-      .select("*")
+      .select("id")
       .eq("user_id", userId)
-      .eq("movie_id", movieId)
+      .eq("movie_id", movie.id)
       .maybeSingle()
 
-    if (existing) {
-      const { error } = await supabase.from("watchlist").delete().eq("user_id", userId).eq("movie_id", movieId)
-
-      if (error) throw error
+    if (data) {
+      await supabase.from("watchlist").delete().eq("id", data.id)
       return { success: true, action: "removed" }
-    } else {
-      const { error } = await supabase.from("watchlist").insert({
-        user_id: userId,
-        movie_id: movieId,
-        movie_title: movieData.title,
-        poster_path: movieData.poster_path,
-      })
-
-      if (error) throw error
-      return { success: true, action: "added" }
     }
-  } catch (error) {
-    console.error("Error toggling watchlist:", error)
-    return { success: false, error: "Failed to update watchlist" }
+
+    await supabase.from("watchlist").insert({
+      user_id: userId,
+      movie_id: movie.id,
+      movie_title: movie.title,
+      poster_path: movie.poster_path,
+    })
+
+    return { success: true, action: "added" }
+  } catch {
+    return { success: false, error: "Watchlist update failed" }
   }
 }
 
-export async function checkMovieStatus(userId: string, movieId: string) {
-  const { createClient } = await import("@/lib/supabase/server")
-  const supabase = await createClient()
-
+export async function checkMovieStatus(
+  userId: string,
+  movieId: string
+): Promise<{ isFavorite: boolean; isInWatchlist: boolean }> {
   try {
-    const [favoriteResult, watchlistResult] = await Promise.all([
-      supabase.from("favorites").select("*").eq("user_id", userId).eq("movie_id", movieId).maybeSingle(),
-      supabase.from("watchlist").select("*").eq("user_id", userId).eq("movie_id", movieId).maybeSingle(),
+    const supabase = await getSupabase()
+
+    const [fav, watch] = await Promise.all([
+      supabase
+        .from("favorites")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("movie_id", movieId)
+        .maybeSingle(),
+      supabase
+        .from("watchlist")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("movie_id", movieId)
+        .maybeSingle(),
     ])
 
     return {
-      isFavorite: !!favoriteResult.data,
-      isInWatchlist: !!watchlistResult.data,
+      isFavorite: !!fav.data,
+      isInWatchlist: !!watch.data,
     }
-  } catch (error) {
-    console.error("Error checking movie status:", error)
+  } catch {
     return { isFavorite: false, isInWatchlist: false }
   }
 }
