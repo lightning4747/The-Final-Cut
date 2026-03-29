@@ -111,6 +111,46 @@ This ensures the UI remains stable and presentable regardless of backend availab
 * `public/`: Static assets and placeholder images
 * `styles/`: Global CSS and design tokens
 
+## 🧩 Current Project Issues
+
+The project is feature-rich and visually polished, but there are some active limitations worth tracking:
+
+1. **Incomplete Type Safety**
+   - Several states and API responses still rely on `any`, which weakens TypeScript protections and increases runtime risk.
+2. **Async UX Feedback Gaps**
+   - Actions like adding/removing favorites and watchlist items disable buttons, but do not always provide clear success/error feedback.
+3. **Potential N+1 Data Fetching**
+   - Repeated per-card user/status checks can lead to extra Supabase calls on list-heavy pages.
+4. **Inconsistent Navigation Patterns**
+   - Some flows use client router navigation while others force full-page redirects, creating uneven UX behavior.
+5. **Error Observability**
+   - Some fallback catch paths return generic errors without enough logging context for production debugging.
+6. **Scalability for Search/Browse Results**
+   - Current browse/search rendering can become heavy without stronger pagination, filtering, or virtualized rendering.
+7. **Configuration Rigidity**
+   - Caching/revalidation behavior is mostly hardcoded, making environment-specific tuning harder.
+
+## 💡 Suggested New Features
+
+To improve product quality and engagement, these are strong next additions:
+
+1. **Advanced Search Filters**
+   - Add rating, release year range, language, and runtime filters on browse/search.
+2. **Recommendation Blocks**
+   - Introduce sections like “Because you liked…” and “More in your favorite genres.”
+3. **Watchlist Progress Tracking**
+   - Let users mark items as *Want to Watch*, *Watching*, or *Watched* with optional priority.
+4. **User Reviews and Ratings**
+   - Enable community reviews and personal ratings on movie detail pages.
+5. **Shared Lists**
+   - Allow users to generate public/shareable watchlists or favorites collections.
+6. **Improved Loading and Toast Feedback**
+   - Add richer feedback for all async actions (loading indicators + clear success/error toasts).
+7. **Analytics Dashboard**
+   - Surface personal insights like most watched genres, activity trends, and completion stats.
+8. **Genre-Focused Discovery Sections**
+   - Add dedicated “Trending in Action/Drama/Sci-Fi” rails to improve exploration depth.
+
 ## 🤝 Freelance & Collaboration
 
 I am open to undertaking web and full‑stack development projects for a price. If you are interested in custom builds, feature extensions, or similar products, feel free to reach out via GitHub.
